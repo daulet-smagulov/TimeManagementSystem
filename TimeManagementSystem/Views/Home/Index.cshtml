@@ -1,0 +1,623 @@
+﻿@*@section SPAViews {
+        @Html.Partial("_Home")
+    }
+    @section Scripts{
+        @Scripts.Render("~/bundles/knockout")
+        @Scripts.Render("~/bundles/app")
+    }*@
+
+@using TimeManagementSystem.Models
+
+@model HomeViewModel
+
+@{
+    ViewBag.Title = "Time management system";
+}
+
+<div class="formline">
+    <h3 class="item1 title">@Html.Label("User")</h3>
+    <select class="item2 contacts" id="chooseUsers"></select>
+    <h3 class="item3 title">@Html.LabelFor(m => m.CurrentUser.PreferredHoursPerDay)</h3>
+    <select class="item4 contacts" id="hoursPerDay" placeholder="@Model.CurrentUser.PreferredHoursPerDay"></select>
+    <div class="item5">
+        <button type="button" class="btn btn-info" id="selectButton" style="display:inline-flex">Select events</button>
+        <button type="button" class="btn btn-success" id="saveButton" style="display:none" href="" disabled>Save to HTML</button>
+        <button type="button" class="btn btn-secondary" id="cancelButton" style="display:none">Cancel</button>
+    </div>
+</div>
+<a id="downloadLink" href="" style="display:none">Download as Text File</a>
+<div id="calendar"></div>
+
+<div id="eventInfoModal" class="modal fade" role="dialog">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title">
+                    <span id="eventTitle"></span>
+                </h4>
+            </div>
+            <div class="modal-body">
+                <p id="pDetails"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="btnDelete" class="btn btn-default pull-left">
+                    <span class="glyphicon glyphicon-remove"></span>
+                    Remove
+                </button>
+                <button type="button" id="btnEdit" class="btn btn-default pull-left" style="margin-right:10px">
+                    <span class="glyphicon glyphicon-pencil"></span>
+                    Edit
+                </button>
+                <button type="button" class="btn btn-default pull-right" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="saveEventModal" class="modal fade" role="dialog">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title"></h4>
+            </div>
+            <div class="modal-body">
+                <form class="carousel">
+                    <input type="hidden" id="hdEventId" value="0" />
+                    <div class="form-group">
+                        <label for="userInfo">User</label>
+                        <p id="userInfo"></p>
+                    </div>
+                    <div class="form-group">
+                        <label>Subject</label>
+                        <input type="text" id="txtSubject" class="form-control" style="min-width:100%" />
+                    </div>
+                    <div class="form-group">
+                        <label>Start</label>
+                        <div class="input-group date" id="dtp1">
+                            <input type="text" id="txtStart" class="form-control" style="min-width:100%" />
+                            <span class="input-group-addon">
+                                <span class="glyphicon glyphicon-calendar"></span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="checkbox">
+                            <label><input type="checkbox" id="chckIsFullDay" />Full day event</label>
+                        </div>
+                    </div>
+                    <div class="form-group" id="divEndDate" style="display:none">
+                        <label>End</label>
+                        <div class="input-group date" id="dtp2">
+                            <input type="text" id="txtEnd" class="form-control" style="min-width: 100%" />
+                            <span class="input-group-addon">
+                                <span class="glyphicon glyphicon-calendar"></span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea class="form-control" id="txtDescription" style="min-width:100%; resize:none" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-success" id="btnSave" style="margin-left:5px">Save</button>
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="//cdnjs.cloudflare.com/ajax/libs/selectize.js/0.12.6/js/standalone/selectize.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/moment.js/2.18.1/moment.min.js"></script>
+    <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/bootstrap-datetimepicker/4.17.47/js/bootstrap-datetimepicker.min.js"></script>
+    <script src="//cdn.jsdelivr.net/npm/fullcalendar@5.2.0/main.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+
+            var dateFormat = 'YYYY-MM-DD HH:mm:ss';
+            var REGEX_EMAIL = '([a-z0-9!#$%&\'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&\'*+/=?^_`{|}~-]+)*@@' +
+                '(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)';
+
+            var currentUser = {
+                id: '@Model.CurrentUser.Id',
+                name: '@Model.CurrentUser.FullName',
+                email: '@Model.CurrentUser.Email',
+                hours: '@Model.CurrentUser.PreferredHoursPerDay',
+            };
+
+            var events = [];
+            var selectedIds = [];
+            var defaultDate = new Date();
+            var defaultView = 'dayGridMonth';
+            var selectedEvent = null;
+            var backgroundEvents = [];
+
+            SetHoursSelectize();
+            if (@Json.Encode(Model.HasSubUsers)) {
+                GetSubUsers();
+            } else {
+                SetUsersSelectize([currentUser]);
+                $('#chooseUsers')[0].selectize.disable();
+            }
+
+            function GetSubUsers() {
+                var optionUsers = [];
+                $.ajax({
+                    type: 'GET',
+                    url: '/home/GetSubUsers',
+                    data: { userId: '@Model.CurrentUser.Id' },
+                    success: function (data) {
+                        $.each(data, function (i, v) {
+                            optionUsers.push({
+                                id: v.Id,
+                                email: v.Email,
+                                name: v.FullName
+                            });
+                        });
+                        SetUsersSelectize(optionUsers);
+                    },
+                    error: function (error) {
+                        alert('Cannot retrieve users');
+                    }
+                });
+            }
+
+            function RefreshCalendar() {
+                events = [];
+                $.ajax({
+                    type: 'GET',
+                    url: '/home/GetEvents',
+                    data: { id: currentUser.id },
+                    success: function (data) {
+                        $.each(data, function (i, v) {
+                            events.push({
+                                id: v.EventId,
+                                userId: v.UserId,
+                                title: v.Subject,
+                                description: v.Description,
+                                start: moment(v.Start).format(dateFormat),
+                                end: v.End != null ? moment(v.End).format(dateFormat) : null,
+                                allDay: v.IsFullDay
+                            });
+                        });
+                        GenerateCalendar(events);
+                    },
+                    error: function (error) {
+                        alert('Failed to retrieve events');
+                    }
+                });
+            }
+
+            function GenerateCalendar(events) {
+                selectedIds = [];
+                var calendarEl = document.getElementById('calendar');
+                if (calendar.view != null) {
+                    defaultView = calendar.view.type;
+                }
+                calendar = new FullCalendar.Calendar(calendarEl, {
+                    contentHeight: 600,
+                    initialDate: defaultDate,
+                    initialView: defaultView,
+                    timeFormat: 'h(:mm)a',
+                    headerToolbar: {
+                        left: 'prev,next,today',
+                        center: 'title',
+                        right: 'dayGridMonth,timeGridWeek,timeGridDay,listMonth'
+                    },
+                    events: events,
+                    eventClick: function (info) {
+                        defaultDate = info.event.start;
+                        selectedEvent = info.event;
+                        ShowInfo(info.event);
+                    },
+                    editable: true,
+                    eventResizableFromStart: true,
+                    eventResize: function (info) {
+                        defaultDate = info.event.start;
+                        selectedEvent = info.event;
+                        var data = GetDataFromEvent(selectedEvent);
+                        SaveEvent(data);
+                    },
+                    eventDrop: function (info) {
+                        defaultDate = info.event.start;
+                        selectedEvent = info.event;
+                        var data = GetDataFromEvent(selectedEvent);
+                        SaveEvent(data);
+                    },
+                    selectable: true,
+                    select: function (info) {
+                        this.initialDate = info.start;
+                        defaultDate = info.start;
+                        selectedEvent = {
+                            id: 0,
+                            title: '',
+                            start: moment(info.start),
+                            end: moment(info.end),
+                            allDay: false,
+                            extendedProps: { userId: currentUser.id, description: '' }
+                        };
+                        OpenAddEditForm('New event');
+                        calendar.render();
+                    },
+                });
+                calendar.render();
+                CompareDurations();
+            }
+
+            function CompareDurations() {
+                $.ajax({
+                    type: 'GET',
+                    url: '/home/CompareDurations',
+                    data: { userId: currentUser.id },
+                    success: function (data) {
+                        backgroundEvents = [];
+                        $.each(data, function (key, value) {
+                            var nextDate = new Date(key);
+                            nextDate.setDate(nextDate.getDate() + 1);
+                            var event = {
+                                start: key,
+                                end: moment(nextDate).format('YYYY-MM-DD'),
+                                display: 'background',
+                                color: value ? '#b4ebb2' : '#ff8080',
+                            };
+                            backgroundEvents.push(event);
+                            calendar.addEvent(event);
+                        });
+                    },
+                    error: function (error) {
+                        alert('Failed to compare durations with preferred working hours');
+                    }
+                });
+            }
+
+            function ShowInfo(event) {
+                //var user = GetUserById(event.extendedProps.userId);
+                $('#eventInfoModal #eventTitle').text(event.title);
+                var $description = $('<div/>');
+                $description.append($('<p/>').html('<b>User: </b>' + currentUser.name + ' (' + currentUser.email + ')'));
+                $description.append($('<p/>').html('<b>Start: </b>' + moment(event.start).format(dateFormat)));
+                if (event.end != null) {
+                    $description.append($('<p/>').html('<b>End: </b>' + moment(event.end).format(dateFormat)));
+                }
+                $description.append($('<p/>').html('<b>Description: </b>' + event.extendedProps.description));
+                $('#eventInfoModal #pDetails').empty().html($description);
+                $('#eventInfoModal').modal();
+            }
+
+            $('#btnEdit').click(function () {
+                //Open modal dialog for edit
+                OpenAddEditForm('Edit event');
+            })
+
+            $('#btnDelete').click(function () {
+                if (selectedEvent != null && confirm('Are you sure you want to delete this event?')) {
+                    $.ajax({
+                        type: 'POST',
+                        url: '/home/DeleteEvent',
+                        data: { 'id': selectedEvent.id },
+                        success: function (data) {
+                            if (data.status) {
+                                //Refresh the calendar
+                                RefreshCalendar();
+                                $('#eventInfoModal').modal('hide');
+                            }
+                        },
+                        error: function () {
+                            alert('Failed to delete the event');
+                        }
+                    })
+                }
+            })
+
+            $('#dtp1,#dtp2').datetimepicker({
+                format: dateFormat
+            })
+
+            $('#chckIsFullDay').change(function () {
+                if ($(this).is(':checked')) {
+                    $('#divEndDate').hide();
+                } else {
+                    $('#divEndDate').show();
+                }
+            })
+
+            function OpenAddEditForm(actionName) {
+                if (selectedEvent != null) {
+                    var user = GetUserById(selectedEvent.extendedProps.userId);
+                    $('#hdEventId').val(selectedEvent.id);
+                    $('#userInfo').text(user.name + ' (' + user.email + ')');
+                    $('#txtSubject').val(selectedEvent.title);
+                    $('#txtStart').val(moment(selectedEvent.start).format(dateFormat));
+                    $('#chckIsFullDay').prop('checked', selectedEvent.allDay);
+                    $('#chckIsFullDay').change();
+                    $('#txtEnd').val(selectedEvent.end != null ? moment(selectedEvent.end).format(dateFormat) : '');
+                    $('#txtDescription').val(selectedEvent.extendedProps.description);
+                    //$('#ddThemeColor').val(selectedEvent.color);
+                }
+                $('#eventInfoModal').modal('hide');
+                $('#saveEventModal').on('show.bs.modal', function (event) {
+                    $(this).find('.modal-title').text(actionName);
+                });
+                $('#saveEventModal').modal();
+            }
+
+            $('#btnSave').click(function () {
+                //Validation
+                if ($('#txtSubject').val().trim() == "") {
+                    alert('Subject cannot be empty');
+                    return;
+                }
+                if ($('#txtStart').val().trim() == "") {
+                    alert('Please specify start date');
+                    return;
+                }
+                if ($('#chckIsFullDay').is(':checked') == false) {
+                    if ($('#txtEnd').val().trim() == "") {
+                        alert('Please specify end date or set the full day event');
+                        return;
+                    } else {
+                        var startDate = moment($('#txtStart').val(), dateFormat).toDate();
+                        var endDate = moment($('#txtEnd').val(), dateFormat).toDate();
+                        if (startDate > endDate) {
+                            alert('End date cannot be before start date');
+                            return;
+                        }
+                    }
+                }
+                var data = {
+                    EventId: $('#hdEventId').val(),
+                    UserId: currentUser.id,
+                    Subject: $('#txtSubject').val().trim(),
+                    Start: $('#txtStart').val().trim(),
+                    End: $('#chckIsFullDay').is(':checked') ? null : $('#txtEnd').val().trim(),
+                    Description: $('#txtDescription').val().trim(),
+                    IsFullDay: $('#chckIsFullDay').is(':checked')
+                };
+                //Call function to submit data to the server
+                SaveEvent(data);
+            })
+
+            function GetUserById(userId) {
+                var user = null;
+                $.ajax({
+                    type: 'GET',
+                    url: '/home/GetUserById',
+                    async: false,
+                    data: { userId: userId },
+                    success: function (data) {
+                        user = {
+                            id: data.Id,
+                            email: data.Email,
+                            name: data.FullName,
+                            hours: data.PreferredHoursPerDay,
+                        };
+                    },
+                    error: function () {
+                        alert('Cannot find user name with Id: ' + userId);
+                    }
+                });
+                return user;
+            }
+
+            function GetDataFromEvent(event) {
+                return {
+                    EventId: event.id,
+                    UserId: event.extendedProps.userId,
+                    Subject: event.title,
+                    Start: moment(event.start).format(dateFormat),
+                    End: event.end != null ? moment(event.end).format(dateFormat) : null,
+                    Description: event.extendedProps.description,
+                    ThemeColor: event.color,
+                    IsFullDay: event.allDay
+                };
+            }
+
+            function SaveEvent(data) {
+                $.ajax({
+                    type: 'POST',
+                    url: '/home/SaveEvent',
+                    data: data,
+                    success: function (data) {
+                        if (data.status) {
+                            //Refresh the calendar
+                            RefreshCalendar();
+                            $('#saveEventModal').modal('hide');
+                        }
+                    },
+                    error: function () {
+                        alert('Failed to save the event');
+                    }
+                })
+            }
+
+            function SetUsersSelectize(options) {
+                $('#chooseUsers').selectize({
+                    persist: false,
+                    maxItems: 1,
+                    valueField: 'id',
+                    labelField: 'name',
+                    searchField: ['name', 'email'],
+                    options: options,
+                    onInitialize: function () {
+                        this.setValue('@Model.CurrentUser.Id');
+                    },
+                    render: {
+                        item: function (item, escape) {
+                            return '<div>' +
+                                (item.name ? '<span class="name">' + escape(item.name) + '</span>' : '') +
+                                (item.email ? '<span class="email">' + escape(item.email) + '</span>' : '') +
+                                '</div>';
+                        },
+                        option: function (item, escape) {
+                            var label = item.name || item.email;
+                            var caption = item.name ? item.email : null;
+                            return '<div>' +
+                                '<span class="label">' + escape(label) + '</span>' +
+                                (caption ? '<span class="caption">' + escape(caption) + '</span>' : '') +
+                                '</div>';
+                        }
+                    },
+                    createFilter: function (input) {
+                        var regexpA = new RegExp('^' + REGEX_EMAIL + '$', 'i');
+                        var regexpB = new RegExp('^([^<]*)\<' + REGEX_EMAIL + '\>$', 'i');
+                        return regexpA.test(input) || regexpB.test(input);
+                    },
+                    create: function (input) {
+                        if ((new RegExp('^' + REGEX_EMAIL + '$', 'i')).test(input)) {
+                            return { email: input };
+                        }
+                        var match = input.match(new RegExp('^([^<]*)\<' + REGEX_EMAIL + '\>$', 'i'));
+                        if (match) {
+                            return {
+                                email: match[2],
+                                name: $.trim(match[1])
+                            };
+                        }
+                        alert('Invalid email address.');
+                        return false;
+                    },
+                    onChange: function (value) {
+                        currentUser = GetUserById(value);
+                        RefreshCalendar();
+                        $('#hoursPerDay')[0].selectize.setValue(currentUser.hours);
+                        ResetButtons();
+                        // Uncomment to disable preferred hours modification for another user
+                        @*if (currentUser.id == '@Model.CurrentUser.Id') {
+                            $('#hoursPerDay')[0].selectize.enable();
+                        } else {
+                            $('#hoursPerDay')[0].selectize.disable();
+                        }*@
+                    }
+                });
+            }
+
+            function SetHoursSelectize() {
+                var hours = [];
+                for (var i = 0; i < 25; i++) {
+                    hours.push({ value: i });
+                }
+                $('#hoursPerDay').selectize({
+                    valueField: 'value',
+                    labelField: 'value',
+                    options: hours,
+                    onChange: function (value) {
+                        if (currentUser.hours != value) {
+                            currentUser.hours = value;
+                            SetWorkingHours(value);
+                        }
+                        ResetButtons();
+                    },
+                });
+            }
+
+            function SetWorkingHours(value) {
+                $.ajax({
+                    type: 'POST',
+                    url: '/home/SetWorkingHours',
+                    data: { hours: value },
+                    success: function (data) {
+                        if (data.status) {
+                            GenerateCalendar(events);
+                        }
+                    },
+                    error: function () {
+                        alert('Failed to set working hours');
+                    }
+                })
+            }
+
+            document.getElementById("selectButton").onclick = function SelectEventsClick() {
+                var selectBtn = document.getElementById("selectButton");
+                selectBtn.style.display = "none";
+                $.each(["saveButton", "cancelButton"], function (i, button) {
+                    var x = document.getElementById(button);
+                    x.style.display = "inline-flex";
+                });
+                selectedIds = [];
+                var calendarEl = document.getElementById('calendar');
+                var calendar = new FullCalendar.Calendar(calendarEl, {
+                    contentHeight: 600,
+                    initialDate: defaultDate,
+                    initialView: defaultView,
+                    timeFormat: 'h(:mm)a',
+                    headerToolbar: {
+                        left: 'prev,next,today',
+                        center: 'title',
+                        right: 'dayGridMonth,timeGridWeek,timeGridDay,listMonth'
+                    },
+                    events: events,
+                    eventColor: '#ddeeff',
+                    eventTextColor: 'white',
+                    eventClick: function (info) {
+                        if (info.event.display == 'background')
+                            return;
+                        const index = selectedIds.indexOf(info.event.id);
+                        if (index < 0) {
+                            selectedIds.push(info.event.id);
+                            info.event.remove(); // = '#ddeeff';
+                        } else {
+                            selectedIds.splice(index, 1);
+                            info.event.remove();  //'#3788d8';
+                        }
+                        $('#saveButton').prop('disabled', selectedIds.length == 0);
+                        calendar.addEvent({
+                            id: info.event.id,
+                            start: info.event.start,
+                            end: info.event.end,
+                            title: info.event.title,
+                            color: (index < 0) ? '#3788d8' : '#96c8e6',
+                        });
+                    },
+                });
+                $.each(backgroundEvents, function (i, ev) {
+                    calendar.addEvent(ev);
+                });
+                calendar.render();
+            };
+
+            document.getElementById("cancelButton").onclick = function CancelClick() {
+                ResetButtons();
+                GenerateCalendar(events);
+            }
+
+            document.getElementById("saveButton").onclick = function () {
+                $.ajax({
+                    type: 'GET',
+                    url: '/home/ExportToHtml',
+                    traditional: true,
+                    data: { selectedIds: selectedIds, userId: currentUser.id },
+                    success: function (data) {
+                        var blob = new Blob([data], { type: 'text/html' });
+                        var fileURL = window.URL.createObjectURL(blob);
+                        //window.open(fileURL);
+                        document.getElementById('downloadLink').href = fileURL;
+                        document.getElementById('downloadLink').download =
+                            currentUser.email + ' ' + moment().format(dateFormat) + '.html';
+                        document.getElementById("downloadLink").click();
+                    },
+                    error: function () {
+                        alert('Failed to save file');
+                    }
+                });
+                ResetButtons();
+                GenerateCalendar(events);
+            }
+
+            function ResetButtons() {
+                var selectBtn = document.getElementById("selectButton");
+                selectBtn.style.display = "inline-flex";
+                $.each(["saveButton", "cancelButton"], function (i, button) {
+                    var x = document.getElementById(button);
+                    x.style.display = "none";
+                });
+                $('#saveButton').prop('disabled', true);
+            }
+        });
+
+    </script>
+}
