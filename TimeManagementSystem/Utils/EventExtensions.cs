@@ -6,11 +6,12 @@ namespace TimeManagementSystem.Utils
 {
     public static class EventExtensions
     {
+        public static string DateKeyFormat => "yyyy-MM-dd";
+
         public static Dictionary<string, double> GetDuration(this Event ev)
         {
-            var dateKeyFormat = "yyyy.MM.dd";
             var duration = new Dictionary<string, double>();
-            var startDateKey = ev.Start.ToString(dateKeyFormat);
+            var startDateKey = ev.Start.ToString(DateKeyFormat);
 
             if (!ev.End.HasValue)
             {
@@ -26,13 +27,13 @@ namespace TimeManagementSystem.Utils
 
             duration[startDateKey] = DurationToStartOrEndOfDay(ev.Start, true);
             if (ev.End.Value != ev.End.Value.Date)
-                duration[ev.End.Value.ToString(dateKeyFormat)] = DurationToStartOrEndOfDay(ev.End.Value, false);
+                duration[ev.End.Value.ToString(DateKeyFormat)] = DurationToStartOrEndOfDay(ev.End.Value, false);
 
             int daysBetween = (ev.End.Value.Date - ev.Start.Date).Days;
             for (int i = 1; i < daysBetween; i++)
             {
                 var currentDate = ev.Start.AddDays(i);
-                duration[currentDate.ToString(dateKeyFormat)] = 24.0;
+                duration[currentDate.ToString(DateKeyFormat)] = 24.0;
             }
 
             return duration;
